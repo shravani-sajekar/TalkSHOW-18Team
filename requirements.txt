@@ -1,7 +1,7 @@
 streamlit==1.33.0
 requests==2.31.0
 numpy==1.26.4
-transformers~=4.22.1
+transformers>=4.38.2
 matplotlib==3.8.3
 textgrid==1.5
 smplx==0.1.28
