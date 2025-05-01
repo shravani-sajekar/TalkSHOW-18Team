@@ -1,138 +1,88 @@
 import streamlit as st
-import subprocess
 import os
-import uuid
+import subprocess
+import time
+import logging
+import traceback
 import tempfile
-import soundfile as sf
-import numpy as np
-import pyaudio
-import wave
-from datetime import datetime
+import shutil
+def process_audio(audio_file_path):
+    logging.basicConfig(level=logging.DEBUG,
+                        format='%(asctime)s - %(levelname)s - %(message)s')
+    logger = logging.getLogger(__name__)
 
-# Set page title
-st.title("TalkSHOW Video Generator")
+    try:
+        logger.info(f"Received audio file: {audio_file_path}")
+        logger.info(f"Audio file exists: {os.path.exists(audio_file_path)}")
 
-# Initialize session state
-if 'audio_path' not in st.session_state:
-    st.session_state.audio_path = None
+        if not audio_file_path or not os.path.exists(audio_file_path):
+            raise ValueError(f"Invalid or non-existent audio file: {audio_file_path}")
 
-tab1, tab2 = st.tabs(["Upload Audio", "Record Audio"])
+        output_dir = os.path.join("visualise", "video", "body-pixel2")
+        os.makedirs(output_dir, exist_ok=True)
 
-with tab1:
-    audio_file = st.file_uploader("Upload an audio file (.wav)", type=["wav"])
-    
-    if audio_file is not None:
-        os.makedirs("demo_audio", exist_ok=True)
-        unique_filename = f"{audio_file.name}"
-        audio_path = os.path.join("./demo_audio", unique_filename)
+        logger.debug(f"Current working directory: {os.getcwd()}")
+        logger.debug(f"Audio file path: {os.path.abspath(audio_file_path)}")
+        logger.debug(f"Audio file size: {os.path.getsize(audio_file_path)} bytes")
 
-        with open(audio_path, "wb") as f:
-            f.write(audio_file.getbuffer())
+        cmd = [
+            "python3",
+            os.path.abspath("/Users/shravanisajekar/Desktop/CCN/TALKSHOW/scripts/demo.py"),
+            "--config_file", os.path.abspath("config/body_pixel.json"),
+            "--infer",
+            "--audio_file", os.path.abspath(audio_file_path),
+            "--id", "0",
+            "--whole_body"
+        ]
 
-        st.audio(audio_file)
-        st.success(f"Audio file saved as {unique_filename}")
+        logger.info(f"Executing command: {' '.join(cmd)}")
 
-        st.session_state.audio_path = audio_path
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=os.getcwd(),
+            timeout=180
+        )
 
-with tab2:
-    st.write("Record your audio:")
-    
-    def record_audio():
-        chunk = 1024
-        format = pyaudio.paInt16
-        channels = 1
-        rate = 16000
-        record_seconds = 5
-        output_filename = "output.wav"
+        logger.info(f"Command STDOUT: {result.stdout}")
+        logger.error(f"Command STDERR: {result.stderr}")
 
-        # Ensure the demo_audio folder exists
-        os.makedirs("./demo_audio", exist_ok=True)
-        
-        # Save the file inside the demo_audio folder (no double "demo_audio")
-        output_path = os.path.join("./demo_audio", output_filename)
+        output_path = os.path.join(output_dir, "shravanisajekar/1st-page.mp4")
+        logger.info(f"Expected output path: {output_path}")
 
-        p = pyaudio.PyAudio()
-        stream = p.open(format=format, channels=channels,
-                        rate=rate, input=True,
-                        frames_per_buffer=chunk)
-
-        st.write("Recording...")
-        frames = []
-
-        for i in range(0, int(rate / chunk * record_seconds)):
-            data = stream.read(chunk)
-            frames.append(data)
-
-        st.write("Recording finished")
-
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
-
-        # Save the recording to the demo_audio folder
-        wf = wave.open(output_path, 'wb')
-        wf.setnchannels(channels)
-        wf.setsampwidth(p.get_sample_size(format))
-        wf.setframerate(rate)
-        wf.writeframes(b''.join(frames))
-        wf.close()
-
-        return output_path
-
-    if st.button("Record Audio"):
-        recorded_filename = record_audio()
-        recorded_path = os.path.join(recorded_filename)
-        st.success(f"Recording saved as {recorded_filename}")
-        st.session_state.audio_path = recorded_path   # <-- Save it globally
-
-# Common controls section
-st.sidebar.header("Generation Settings")
-demo_type = st.sidebar.selectbox("Select demo type", ["Whole Body", "Only Face", "Diversity (Multiple Samples)"])
-speaker_id = st.sidebar.number_input("Speaker ID", min_value=0, step=1, value=0)
-
-
-# Button to trigger generation
-if st.button("Generate Video"):
-    if st.session_state.audio_path is None:
-        st.warning("Please upload or record a .wav file.")
-    else:
-        audio_path = st.session_state.audio_path  # ✅ Use the saved audio path
-
-        if demo_type == "Whole Body":
-            cmd = f"python scripts/demo.py --config_file ./config/LS3DCG.json --infer --audio_file {audio_path} --body_model_name s2g_LS3DCG --body_model_path experiments/2022-10-19-smplx_S2G-LS3DCG/ckpt-99.pth --id 0"
-            base_name = os.path.splitext(os.path.basename(audio_path))[0]
-            video_dir = os.path.join("visualise", "video", "LS3DCG", f"{base_name}.wav")
-            video_path = os.path.join(video_dir, f"{base_name}.mp4")
-        elif demo_type == "Only Face":
-            cmd = f"python scripts/demo.py --config_file ./config/body_pixel.json --infer --audio_file {audio_path} --id 0 --only_face"
-            base_name = os.path.splitext(os.path.basename(audio_path))[0]
-            video_dir = os.path.join("visualise", "video", "body-pixel2", f"{base_name}.wav")
-            video_path = os.path.join(video_dir, f"{base_name}.mp4")
-        elif demo_type == "Diversity (Multiple Samples)":
-            cmd = f"python scripts/demo.py --config_file ./config/body_pixel.json --infer --audio_file {audio_path} --id 0 --num_sample 12"
-            base_name = os.path.splitext(os.path.basename(audio_path))[0]
-            video_dir = os.path.join("visualise", "video", "body-pixel2", f"{base_name}.wav")
-            video_path = os.path.join(video_dir, f"{base_name}.mp4")
-
-        print(audio_path)
-
-        st.info("Running the generation script...")
-        log_placeholder = st.empty()
-        log_text = ""
-
-        process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-
-        for line in iter(process.stdout.readline, ''):
-            log_text += line
-            log_placeholder.text(log_text)
-
-        process.stdout.close()
-        process.wait()
-
-        print(video_path)
-
-        if os.path.exists(video_path):
-            st.success("Video generated successfully!")
-            st.video(video_path)
+        if os.path.exists(output_path):
+            logger.info(f"Output video found: {output_path}")
+            return output_path, None
         else:
-            st.error("Video not found. Please check the logs for errors.")
+            return None, f"Error: Output video not generated. STDERR: {result.stderr}"
+
+    except subprocess.TimeoutExpired:
+        return None, "Error: Inference process took too long"
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        logger.error(traceback.format_exc())
+        return None, f"Unexpected error: {str(e)}"
+
+
+# Streamlit UI
+st.title("TalkSHOW: Speech-to-Motion Translation System")
+st.markdown("Convert speech audio to realistic 3D human motion using the SMPL-X model.")
+
+uploaded_file = st.file_uploader("Upload Audio File", type=["wav", "mp3"])
+
+if uploaded_file is not None:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_audio:
+        tmp_audio.write(uploaded_file.read())
+        tmp_audio_path = tmp_audio.name
+
+    st.info("Processing audio...")
+    video_path, error = process_audio(tmp_audio_path)
+
+    if error:
+        st.error(error)
+    elif video_path:
+        st.success("Motion video generated successfully!")
+        st.video(video_path)
+
