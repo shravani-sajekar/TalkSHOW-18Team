@@ -1,6 +1,7 @@
 import os
 import sys
 # os.environ["PYOPENGL_PLATFORM"] = "egl"
+os.system("pip install transformers")
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 sys.path.append(os.getcwd())
 
